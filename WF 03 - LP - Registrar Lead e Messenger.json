@@ -1,0 +1,92 @@
+{
+  "name": "WF 03 - LP | Registrar Lead e iniciar Messenger",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lp/start-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "id": "b5a2b0d0-57bd-4a26-83e5-8f8ef80d9e21",
+      "name": "LP Start Lead Webhook",
+      "webhookId": "c4c1aab5-4f8c-42d5-bd5a-7e72e68f37a9"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawBody = $json.body ?? $json;\nconst body = typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody;\nconst nickname = String(body.nickname ?? '').trim();\n\nif (!nickname || nickname.length < 2 || nickname.length > 80) {\n  throw new Error('nickname_invalid');\n}\n\nconst leadSessionId = `ce_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;\n\nreturn [{\n  json: {\n    lead_session_id: leadSessionId,\n    nickname,\n    fbp: body.fbp ?? null,\n    fbc: body.fbc ?? null,\n    fbclid: body.fbclid ?? null,\n    utm_source: body.utm_source ?? null,\n    utm_medium: body.utm_medium ?? null,\n    utm_campaign: body.utm_campaign ?? null,\n    utm_content: body.utm_content ?? null,\n    utm_term: body.utm_term ?? null,\n    landing_page_url: body.landing_page_url ?? null,\n    status: 'started',\n    received_at: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [256, 0],
+      "id": "a7b0a9e8-8ef6-4f22-9f57-7f93013f0d6c",
+      "name": "Validate and Build Lead"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (\n  lead_session_id, nickname, fbp, fbc, fbclid,\n  utm_source, utm_medium, utm_campaign, utm_content, utm_term,\n  landing_page_url, status\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'started'\n)\nON CONFLICT (lead_session_id) DO UPDATE SET\n  nickname = EXCLUDED.nickname,\n  fbp = EXCLUDED.fbp,\n  fbc = EXCLUDED.fbc,\n  fbclid = EXCLUDED.fbclid,\n  utm_source = EXCLUDED.utm_source,\n  utm_medium = EXCLUDED.utm_medium,\n  utm_campaign = EXCLUDED.utm_campaign,\n  utm_content = EXCLUDED.utm_content,\n  utm_term = EXCLUDED.utm_term,\n  landing_page_url = EXCLUDED.landing_page_url,\n  updated_at = NOW()\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ $json.lead_session_id }}, {{ $json.nickname }}, {{ $json.fbp }}, {{ $json.fbc }}, {{ $json.fbclid }}, {{ $json.utm_source }}, {{ $json.utm_medium }}, {{ $json.utm_campaign }}, {{ $json.utm_content }}, {{ $json.utm_term }}, {{ $json.landing_page_url }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [512, 0],
+      "id": "f03d4c18-63c4-4c65-b9c4-0ef44f1db757",
+      "name": "Save Lead in PostgreSQL"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pageId = '1353563564512428';\nconst leadSessionId = $json.lead_session_id;\n\nreturn [{\n  json: {\n    success: true,\n    lead_session_id: leadSessionId,\n    messenger_url: `https://m.me/${pageId}?ref=${encodeURIComponent(leadSessionId)}`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [768, 0],
+      "id": "afc8e04d-6c00-4e0f-93ca-4cf835e59fb3",
+      "name": "Build Messenger Redirect"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
+              { "name": "Access-Control-Allow-Headers", "value": "Content-Type" }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [1024, 0],
+      "id": "8b7e8cb3-0b2d-4525-8f00-f4f9d32df7e3",
+      "name": "Respond with Messenger URL"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "LP Start Lead Webhook": {
+      "main": [[{ "node": "Validate and Build Lead", "type": "main", "index": 0 }]]
+    },
+    "Validate and Build Lead": {
+      "main": [[{ "node": "Save Lead in PostgreSQL", "type": "main", "index": 0 }]]
+    },
+    "Save Lead in PostgreSQL": {
+      "main": [[{ "node": "Build Messenger Redirect", "type": "main", "index": 0 }]]
+    },
+    "Build Messenger Redirect": {
+      "main": [[{ "node": "Respond with Messenger URL", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "binaryMode": "separate" },
+  "tags": []
+}
